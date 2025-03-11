@@ -1,45 +1,55 @@
-import tensorflow as tf
 import numpy as np
 import requests
 import base64
-from PIL import Image
-import io
+import cv2
 
 # IBM Watson ML credentials
-API_KEY =  "hTWgNz0tDfdj5C3IFCPsipAExOSYBQCciJkPpnDnFyhm"
+API_KEY = "hTWgNz0tDfdj5C3IFCPsipAExOSYBQCciJkPpnDnFyhm"
 
-CLASS_NAMES = ['Anthracnose', 'Bacterial Canker', 'Cutting Weevil', 'Die Back', 'Gall Midge', 'Healthy', 'Powdery Mildew', 'Sooty Mould']
+CLASS_NAMES = ['Anthracnose', 'Bacterial Canker', 'Cutting Weevil', 'Die Back', 
+               'Gall Midge', 'Healthy', 'Powdery Mildew', 'Sooty Mould']
 
 def get_token_header():
-    token_response = requests.post('https://iam.cloud.ibm.com/identity/token', data={"apikey":
-    API_KEY, "grant_type": 'urn:ibm:params:oauth:grant-type:apikey'})
+    """Get authentication token for IBM Watson ML API."""
+    token_response = requests.post(
+        'https://iam.cloud.ibm.com/identity/token',
+        data={"apikey": API_KEY, "grant_type": 'urn:ibm:params:oauth:grant-type:apikey'}
+    )
+    token_response.raise_for_status()  # Raise an error for bad responses
     mltoken = token_response.json()["access_token"]
-    header = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mltoken}
-    return header
-
-def predict_image(file):
-    """Score the image using the deployed model."""
-    processed_image = preprocess_image(file)
-    payload_scoring = {"input_data": [{"values": processed_image.numpy().tolist()}]}
-    try:
-        response_scoring = requests.post('https://jp-tok.ml.cloud.ibm.com/ml/v4/deployments/1a1b1ba9-87d3-4aea-ae58-311fe384fbdb/predictions?version=2021-05-01', json=payload_scoring, headers=get_token_header())
-        response = response_scoring.json()
-        predictions = response['predictions'][0]['values']
-        predicted_class = CLASS_NAMES[np.argmax(predictions)]
-        confidence = 100 * np.max(predictions)
-        return predicted_class, confidence
-    except Exception as e:
-        return None, str(e)
+    return {'Content-Type': 'application/json', 'Authorization': f'Bearer {mltoken}'}
 
 def preprocess_image(encoded_string):
-    """Decodes base64 string and preprocesses the image."""
+    """Decodes base64 string and preprocesses the image using OpenCV."""
     try:
         image_bytes = base64.b64decode(encoded_string)
-        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')  # Ensure 3 channels
-        image = image.resize((227, 227))
-        image_array = np.array(image, dtype=np.float32) / 255.0  # Normalize
-        image_array = np.expand_dims(image_array, axis=0)  # Add batch dimension
-        return tf.convert_to_tensor(image_array)
+        image_np = np.frombuffer(image_bytes, np.uint8)
+        image = cv2.imdecode(image_np, cv2.IMREAD_COLOR)  # Convert to BGR format
+        image = cv2.resize(image, (227, 227))  # Resize to model input size
+        image = image.astype(np.float32) / 255.0  # Normalize pixel values
+        image = np.expand_dims(image, axis=0)  # Add batch dimension
+        return image
     except Exception as e:
-        print(f"Error during image preprocessing: {e}")
-        return None
+        return None, f"Error during image preprocessing: {e}"
+
+def predict_image(file):
+    """Score the image using the deployed IBM Watson model."""
+    processed_image = preprocess_image(file)
+    if processed_image is None:
+        return None, "Failed to preprocess image"
+
+    payload_scoring = {"input_data": [{"values": processed_image.tolist()}]}
+    
+    try:
+        response = requests.post(
+            'https://jp-tok.ml.cloud.ibm.com/ml/v4/deployments/1a1b1ba9-87d3-4aea-ae58-311fe384fbdb/predictions?version=2021-05-01',
+            json=payload_scoring, 
+            headers=get_token_header()
+        )
+        response.raise_for_status()  # Check for HTTP errors
+        predictions = response.json()['predictions'][0]['values'][0]
+        predicted_class = CLASS_NAMES[np.argmax(predictions)]
+        confidence = round(100 * np.max(predictions), 2)
+        return predicted_class, confidence
+    except Exception as e:
+        return None, f"Prediction error: {e}"
