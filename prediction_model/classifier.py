@@ -4,7 +4,6 @@ import requests
 import base64
 from PIL import Image
 import io
-from ibm_watson_machine_learning import APIClient
 
 # IBM Watson ML credentials
 API_KEY =  "hTWgNz0tDfdj5C3IFCPsipAExOSYBQCciJkPpnDnFyhm"

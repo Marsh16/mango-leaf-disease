@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-import numpy as np
 from prediction_model.classifier import predict_image
 
 # Initialize Flask app
