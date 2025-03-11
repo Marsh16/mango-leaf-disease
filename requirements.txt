@@ -1,0 +1,5 @@
+tensorflow
+numpy
+pillow
+ibm-watson-machine-learning
+flask
