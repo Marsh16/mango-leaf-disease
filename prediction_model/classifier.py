@@ -1,32 +1,31 @@
 import tensorflow as tf
 import numpy as np
+import requests
 import base64
 from PIL import Image
 import io
 from ibm_watson_machine_learning import APIClient
 
 # IBM Watson ML credentials
-WML_CREDENTIALS = {
-    "apikey": "hTWgNz0tDfdj5C3IFCPsipAExOSYBQCciJkPpnDnFyhm",
-    "url": "https://jp-tok.ml.cloud.ibm.com"
-}
-SPACE_ID="094b021f-4f37-4ba4-8e3b-137f25ff2837"
+API_KEY =  "hTWgNz0tDfdj5C3IFCPsipAExOSYBQCciJkPpnDnFyhm"
+
 CLASS_NAMES = ['Anthracnose', 'Bacterial Canker', 'Cutting Weevil', 'Die Back', 'Gall Midge', 'Healthy', 'Powdery Mildew', 'Sooty Mould']
 
-def get_wml_client():
-    """Initialize and return IBM Watson ML API client."""
-    return APIClient(WML_CREDENTIALS)
+def get_token_header():
+    token_response = requests.post('https://iam.cloud.ibm.com/identity/token', data={"apikey":
+    API_KEY, "grant_type": 'urn:ibm:params:oauth:grant-type:apikey'})
+    mltoken = token_response.json()["access_token"]
+    header = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mltoken}
+    return header
 
-def predict_image(deployment_uid, file):
+def predict_image(file):
     """Score the image using the deployed model."""
     processed_image = preprocess_image(file)
-    wml_client = get_wml_client()
-    wml_client.set.default_space(SPACE_ID)
-    payload = {"input_data": [{"values": processed_image.numpy().tolist()}]}
-
+    payload_scoring = {"input_data": [{"values": processed_image.numpy().tolist()}]}
     try:
-        result = wml_client.deployments.score(deployment_uid, payload)
-        predictions = result['predictions'][0]['values']
+        response_scoring = requests.post('https://jp-tok.ml.cloud.ibm.com/ml/v4/deployments/1a1b1ba9-87d3-4aea-ae58-311fe384fbdb/predictions?version=2021-05-01', json=payload_scoring, headers=get_token_header())
+        response = response_scoring.json()
+        predictions = response['predictions'][0]['values']
         predicted_class = CLASS_NAMES[np.argmax(predictions)]
         confidence = 100 * np.max(predictions)
         return predicted_class, confidence
